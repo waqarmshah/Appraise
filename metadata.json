@@ -1,0 +1,7 @@
+{
+  "name": "Appraise",
+  "description": "Turn everyday clinical work into appraisal-ready evidence. AI-powered documentation for UK doctors.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
