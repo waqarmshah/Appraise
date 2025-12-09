@@ -4,149 +4,188 @@ import { Footer } from './components/Footer';
 import { LandingPage } from './components/LandingPage';
 import { Console } from './components/Console';
 import { Notes } from './components/Notes';
-import { User, Note, UsageStats } from './types';
-
-// Mock user for "Logged In" state
-const MOCK_USER: User = {
-  id: 'user_123',
-  name: 'Dr. Sarah Jenning',
-  email: 'sarah.j@nhs.net',
-  avatar: 'https://picsum.photos/200', // Placeholder
-  plan: 'plus'
-};
+import { Capabilities } from './components/Capabilities';
+import Sidebar from './components/Sidebar';
+import DashboardLayout from './components/DashboardLayout';
+import { User, Note, UsageStats, AppMode } from './types';
+import { useAuth } from './context/AuthContext';
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState('landing');
-  const [user, setUser] = useState<User | null>(null);
+  const { user, loading, signInWithGoogle, signInWithApple, signOut, simulateLogin } = useAuth();
+
+  // Navigation State
+  const [currentView, setCurrentView] = useState<'landing' | 'home' | 'notes' | 'capabilities'>('landing');
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+
+  // Data State
   const [notes, setNotes] = useState<Note[]>([]);
   const [initialConsoleInput, setInitialConsoleInput] = useState('');
-  
+
   // Usage tracking state
   const [usageStats, setUsageStats] = useState<UsageStats>(() => {
-     const saved = localStorage.getItem('appraise_usage');
-     if (saved) {
-         const parsed = JSON.parse(saved);
-         // Reset if new day
-         if (new Date().toDateString() !== new Date(parsed.lastResetDate).toDateString()) {
-             return { count: 0, lastResetDate: new Date().toDateString() };
-         }
-         return parsed;
-     }
-     return { count: 0, lastResetDate: new Date().toDateString() };
+    const saved = localStorage.getItem('appraise_usage');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (new Date().toDateString() !== new Date(parsed.lastResetDate).toDateString()) {
+        return { count: 0, lastResetDate: new Date().toDateString() };
+      }
+      return parsed;
+    }
+    return { count: 0, lastResetDate: new Date().toDateString() };
   });
+
+  // Redirect to home (Console) when logged in
+  useEffect(() => {
+    if (!loading && user && currentView === 'landing') {
+      setCurrentView('home');
+    }
+  }, [user, loading, currentView]);
 
   // Persist usage stats
   useEffect(() => {
-      localStorage.setItem('appraise_usage', JSON.stringify(usageStats));
+    localStorage.setItem('appraise_usage', JSON.stringify(usageStats));
   }, [usageStats]);
 
-  // Load notes from local storage on mount (mock persistence)
+  // Load notes
   useEffect(() => {
-      const savedNotes = localStorage.getItem('appraise_notes');
-      if (savedNotes) {
-          setNotes(JSON.parse(savedNotes));
-      }
+    const savedNotes = localStorage.getItem('appraise_notes');
+    if (savedNotes) {
+      setNotes(JSON.parse(savedNotes));
+    }
   }, []);
 
-  // Save notes to local storage
+  // Save notes
   useEffect(() => {
-      if (user) { // Only persist "Notes" persistently if logged in (simulated)
-        localStorage.setItem('appraise_notes', JSON.stringify(notes));
-      }
+    if (user) {
+      localStorage.setItem('appraise_notes', JSON.stringify(notes));
+    }
   }, [notes, user]);
 
-
-  const handleLogin = () => {
-    // Simulate auth flow
-    const confirm = window.confirm("Simulate Google Login Success?");
-    if (confirm) {
-        setUser(MOCK_USER);
-        if (currentView === 'landing') {
-            setCurrentView('console');
-        }
+  const handleLogin = async (provider: 'google' | 'apple' | 'test') => {
+    if (provider === 'test') {
+      await simulateLogin();
+    } else if (provider === 'google') {
+      await signInWithGoogle();
+    } else {
+      await signInWithApple();
     }
   };
 
-  const handleLogout = () => {
-    setUser(null);
+  const handleLogout = async () => {
+    await signOut();
     setCurrentView('landing');
+    setSelectedNoteId(null);
+  };
+
+  const incrementUsage = () => {
+    setUsageStats(prev => ({ ...prev, count: prev.count + 1 }));
   };
 
   const handleStartFromLanding = (text: string) => {
     setInitialConsoleInput(text);
-    setCurrentView('console');
-    window.scrollTo(0,0);
-  };
-
-  const incrementUsage = () => {
-      setUsageStats(prev => ({ ...prev, count: prev.count + 1 }));
+    handleLogin('test'); // Auto trigger login for demo
   };
 
   const handleSaveNote = (note: Note) => {
-      setNotes(prev => [note, ...prev]);
+    setNotes(prev => [note, ...prev]);
+    setSelectedNoteId(note.id);
+    setCurrentView('notes');
   };
 
-  const renderView = () => {
-    switch(currentView) {
-      case 'landing':
-        return <LandingPage onStart={handleStartFromLanding} onLogin={handleLogin} />;
-      case 'console':
-        return (
-            <Console 
-                user={user} 
-                initialInput={initialConsoleInput} 
-                onSaveNote={handleSaveNote}
-                usageStats={usageStats}
-                incrementUsage={incrementUsage}
-                onRequestLogin={handleLogin}
-            />
-        );
-      case 'notes':
-        return <Notes notes={notes} />;
-      case 'exports':
-        return (
-            <div className="min-h-screen bg-slate-50 flex items-center justify-center p-8">
-                <div className="bg-white p-8 rounded-2xl shadow-lg max-w-md w-full text-center">
-                    <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
-                        ↓
-                    </div>
-                    <h2 className="text-2xl font-bold mb-2">Export Data</h2>
-                    <p className="text-gray-500 mb-6">Compile your notes into a submission-ready pack.</p>
-                    <div className="space-y-3">
-                        <button className="w-full py-3 border border-gray-200 rounded-xl hover:bg-gray-50 font-medium text-gray-700 flex items-center justify-center">
-                            Download GP Summary (PDF)
-                        </button>
-                        <button className="w-full py-3 border border-gray-200 rounded-xl hover:bg-gray-50 font-medium text-gray-700 flex items-center justify-center">
-                            Download MAG Pack (DOCX)
-                        </button>
-                        <button className="w-full py-3 border border-gray-200 rounded-xl hover:bg-gray-50 font-medium text-gray-700 flex items-center justify-center">
-                            Export CSV Data
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-      default:
-        return <LandingPage onStart={handleStartFromLanding} onLogin={handleLogin} />;
+  const handleDeleteNote = (id: string) => {
+    setNotes(prev => prev.filter(n => n.id !== id));
+    if (selectedNoteId === id) {
+      setSelectedNoteId(null);
+      setCurrentView('home');
     }
   };
 
-  return (
-    <div className="flex flex-col min-h-screen">
-      <Navbar 
-        user={user} 
-        onLogin={handleLogin} 
-        onLogout={handleLogout} 
-        onNavigate={setCurrentView}
-        currentView={currentView}
-      />
-      
-      <main className="flex-grow">
-        {renderView()}
-      </main>
+  const handleUpdateNote = (updatedNote: Note) => {
+    setNotes(prev => prev.map(n => n.id === updatedNote.id ? updatedNote : n));
+  };
 
-      <Footer />
-    </div>
+  // Derived State
+  const sortedNotes = [...notes].sort((a, b) => new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime());
+  const selectedNote = notes.find(n => n.id === selectedNoteId) || null;
+
+  if (loading) {
+    return <div className="h-screen bg-white dark:bg-[#212121] flex items-center justify-center transition-colors duration-200"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 dark:border-white"></div></div>;
+  }
+
+  // Unauthenticated View
+  if (!user) {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <Navbar
+          user={user}
+          onLogin={() => handleLogin('test')}
+          onLogout={handleLogout}
+          onNavigate={() => { }}
+          currentView={'landing'}
+        />
+        <main className="flex-grow">
+          <LandingPage onStart={handleStartFromLanding} onLogin={() => handleLogin('test')} />
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Authenticated Dashboard
+  return (
+    <DashboardLayout
+      sidebar={
+        <Sidebar
+          user={user}
+          notes={sortedNotes}
+          selectedNoteId={selectedNoteId}
+          onSelectNote={(note) => {
+            setSelectedNoteId(note.id);
+            setCurrentView('notes');
+          }}
+          onNewEntry={() => {
+            setSelectedNoteId(null);
+            setCurrentView('home');
+          }}
+          onLogout={handleLogout}
+          currentView={currentView}
+          onChangeView={(view) => {
+            setCurrentView(view as any);
+            if (view !== 'notes') setSelectedNoteId(null);
+          }}
+          onUpdateUser={useAuth().updateLocalUser}
+        />
+      }
+    >
+      {currentView === 'home' && (
+        <Console
+          user={user}
+          initialInput={initialConsoleInput}
+          onSaveNote={handleSaveNote}
+          usageStats={usageStats}
+          incrementUsage={incrementUsage}
+          onRequestLogin={() => { }}
+          onConsumeInitialInput={() => setInitialConsoleInput('')}
+        />
+      )}
+
+      {currentView === 'notes' && (
+        <Notes
+          user={user}
+          selectedNote={selectedNote}
+          onDeleteNote={handleDeleteNote}
+          onUpdateNote={handleUpdateNote}
+        />
+      )}
+
+      {currentView === 'capabilities' && (
+        <Capabilities
+          notes={notes}
+          mode={user?.default_mode === 'gp' ? AppMode.GP : AppMode.HOSPITAL}
+        />
+      )}
+
+    </DashboardLayout>
   );
 };
 
